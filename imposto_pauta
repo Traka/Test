@@ -1,608 +1,4 @@
-DELETE FROM t_vars WHERE grp = 'QSQL' AND id = emp2long('CVEN') AND ord = 3;
-INSERT INTO t_vars VALUES (0, 'QSQL', emp2long('CVEN'), 3, 30, 3, 0, 'DELETE FROM temp_impostos_pauta;');
-DELETE FROM t_vars WHERE grp = 'QSQL' AND id = emp2long('CVEN') AND ord = 4;
-INSERT INTO t_vars VALUES (0, 'QSQL', emp2long('CVEN'), 4, 30, 3, 0, 'DELETE FROM temp_impostos_final;');
-
-delete FROM t_vars WHERE grp = 'QSQL' AND id = emp2long('INFO') and ord = 12 ;
-INSERT INTO t_vars VALUES (0, 'QSQL', emp2long('INFO'), 12, 30, 3, 0, 'delete from temp_impostos_pauta 
-                                                                        where u_codproduto = (select cast(valor as integer) 
-                                                                                                from temp_ativos 
-                                                                                               where s_nome = ''pk_produto''
-                                                                                             );');
-
-delete FROM t_vars WHERE grp = 'QSQL' AND id = emp2long('INFO') and ord = 13;
-INSERT INTO t_vars VALUES (0, 'QSQL', emp2long('INFO'), 13, 30, 3, 0,'
-with cte_impostos as (
-select t2.u_codproduto
-     , t1.s_categoria_imposto
-     , t1.s_codigo_imposto
-     , t1.s_usa_pauta     
-     , t1.s_ipi_compoe_pauta     
-     , substr(t1.s_categoria_imposto, -1) as s_oper     
-     , t2.d_valor_imposto as d_valor_imposto_orig
-     , substr(t1.s_categoria_imposto, 1, length(t1.s_categoria_imposto)-2) as s_tax_type
-  from tp_regra_pauta t1
-  join temp_impostos t2 on (t1.s_categoria_imposto = t2.s_categoria_imposto 
-                            and t1.s_codigo_imposto = t2.s_codigo_imposto
-                           )
- where t2.u_codproduto = (select cast(valor as integer)
-                            from temp_ativos
-                           where s_nome = ''pk_produto''
-                         )
-   and t1.u_orgvenda = (select u_orgvenda
-                          from ftsl_orgv
-                         where u_pkey = (select cast(valor as integer)
-                                           from temp_ativos
-                                          where s_nome = ''pk_org_venda''
-                                        )
-                       )                                            
-)
-, cte_ipi_item as (
-select t2.s_categoria_imposto as s_categoria_imposto
-     , t1.s_uom_ipi     as s_uom_code
-     , t1.d_fator_ipi   as d_fator
-     , t1.d_aliq_ipi    as d_aliqouta
-     , t1.d_prc_min_pis as d_prc_min
-     , t1.s_fed_type    as s_fed_type
-     , t2.s_oper        as s_oper
-     , t1.s_uom_ipi     as s_uom
-  from tp_imposto_pauta t1
-  join cte_impostos t2 on (t2.s_tax_type like ''IPI%'' 
-                          )
- where t1.s_tipo_reg = ''ITEM''
-   and t1.s_pk_reg = (select s_codproduto
-                        from ftsl_prod
-                       where u_pkey = (select cast(valor as integer)
-                                         from temp_ativos
-                                        where s_nome = ''pk_produto''
-                                      )
-                     )
-   and t1.u_orgvenda = (select u_orgvenda
-                          from ftsl_orgv
-                         where u_pkey = (select cast(valor as integer)
-                                           from temp_ativos
-                                          where s_nome = ''pk_org_venda''
-                                        )
-                       )
-   and t1.s_fed_type is not null
-   /* Removida a validação de preço_venda < pauta para IPI, tem que ser calculado sempre e a deisão é feita baseada no valor do imposto*/
-   and t1.d_prc_min_ipi is not null
-   and t1.d_fator_ipi > 0
-)
-/*
-CALCULO PARA IPI, COFINS E PIS 
-se preço de venda < d_prc_min
-fator * ( ftsl_prod.d_unidade / conversiion rate ) 
-se não
-preço de venda * aliquota
-*/
-, cte_valor_ipi as (
-select t1.s_categoria_imposto
-     , case when (t1.s_uom = t2.s_uom_prod)                                 
-            then t1.d_fator
-            when ( (t2.d_conversion_rate is not null) 
-                  and (coalesce(t2.s_to_uom_code,'''') = t1.s_uom)
-                 )
-            then t1.d_fator * (t2.d_unidade / t2.d_conversion_rate)
-            else 0
-        end as d_valor_imposto
-     , t1.s_oper as s_oper
-  from cte_ipi_item t1
-  cross join (select t10.u_orgvenda
-                   , t10.s_codproduto
-                   , t10.d_unidade
-                   , t10.s_descricao_unidade
-                   , t20.d_conversion_rate as d_conversion_rate
-                   , t20.s_to_uom_code as s_to_uom_code                   
-                   , t10.s_descricao_unidade as s_uom_prod
-                from ftsl_prod t10
-                join ftsl_orgv t11 on (t10.u_orgvenda = t11.u_pkey)
-                left join tp_tabela_conversao t20 on (t10.s_codproduto = t20.s_codproduto 
-                                                      and t11.u_orgvenda = t20.u_orgvenda
-                                                      and t20.s_from_uom_code = t10.s_descricao_unidade
-                                                     )
-               where t10.u_pkey = (select cast(valor as integer)
-                                     from temp_ativos
-                                    where s_nome = ''pk_produto''
-                                  )
-            ) t2  
-)
-, cte_icms_item_contribuinte as (
-select t2.s_categoria_imposto          as s_categoria_imposto
-     , t1.s_uom_icms                   as s_uom_code
-     , t1.d_valor_icms                 as d_fator
-     , t1.d_aliq_icms/100              as d_aliquota
-     , coalesce(t1.d_basis_icms,0)/100 as d_mod_base_icms
-     , t1.s_type                       as s_type
-     , t1.d_perc_alt_pauta             as d_perc_alt_pauta
-     , coalesce(t1.d_aliq_ipi,0)/100   as d_aliq_ipi
-     , t2.s_oper                       as s_oper
-  from tp_imposto_pauta t1
-  join cte_impostos t2 on (t2.s_tax_type like ''ICMS%''
-                           and t2.s_tax_type not like ''ICMS_ST%'' 
-                           and t2.s_ipi_compoe_pauta = ''Y''
-                          )
- where t1.s_tipo_reg = ''ITEM''
-   and t1.s_pk_reg = (select s_codproduto
-                        from ftsl_prod
-                       where u_pkey = (select cast(valor as integer)
-                                         from temp_ativos
-                                        where s_nome = ''pk_produto''
-                                      )
-                     )
-   and t1.u_orgvenda = (select u_orgvenda
-                          from ftsl_orgv
-                         where u_pkey = (select cast(valor as integer)
-                                           from temp_ativos
-                                          where s_nome = ''pk_org_venda''
-                                        )
-                       )
-   and t1.s_type is not null
-   and t1.s_uf_orig = (select s_uf 
-                         from tp_ov
-                        where u_oi = (select u_orgvenda 
-                                        from ftsl_orgv
-                                       where u_pkey = (select cast(valor as integer)
-                                                         from temp_ativos
-                                                        where s_nome = ''pk_org_venda''
-                                                      )
-                                     )  
-                       )
-   and t1.s_uf_dest = (select s_uf 
-                         from ftsl_ende
-                        where s_codcliente = (select s_codigo 
-                                                from ftsl_clie
-                                               where u_pkey = (select cast(valor as integer)
-                                                                 from temp_ativos
-                                                                where s_nome = ''pk_cliente''
-                                                              )
-                                             )
-                      )
-   and t1.s_contrib_type_code = (select s_codigo 
-                                   from ftsl_cate 
-                                  where u_pkey = (select u_categoria
-                                                    from ftsl_clie
-                                                   where u_pkey = (select cast(valor as integer)
-                                                                     from temp_ativos
-                                                                    where s_nome = ''pk_cliente''
-                                                                  )
-                                                 )
-                                )
-)
-, cte_icms_item_sem_contribuinte as (
-select t2.s_categoria_imposto          as s_categoria_imposto
-     , t1.s_uom_icms                   as s_uom_code
-     , t1.d_valor_icms                 as d_fator
-     , t1.d_aliq_icms/100              as d_aliquota
-     , coalesce(t1.d_basis_icms,0)/100 as d_mod_base_icms
-     , t1.s_type                       as s_type
-     , t1.d_perc_alt_pauta             as d_perc_alt_pauta
-     , coalesce(t1.d_aliq_ipi,0)/100   as d_aliq_ipi
-     , t2.s_oper                       as s_oper
-  from tp_imposto_pauta t1
-  join cte_impostos t2 on (t2.s_tax_type like ''ICMS%''
-                           and t2.s_tax_type not like ''ICMS_ST%''
-                           and t2.s_ipi_compoe_pauta = ''Y''
-                          )
- where t1.s_tipo_reg = ''ITEM''
-   and t1.s_pk_reg = (select s_codproduto
-                        from ftsl_prod
-                       where u_pkey = (select cast(valor as integer)
-                                         from temp_ativos
-                                        where s_nome = ''pk_produto''
-                                      )
-                     )
-   and t1.u_orgvenda = (select u_orgvenda
-                          from ftsl_orgv
-                         where u_pkey = (select cast(valor as integer)
-                                           from temp_ativos
-                                          where s_nome = ''pk_org_venda''
-                                        )
-                       )
-   and t1.s_type is not null
-   and t1.s_uf_orig = (select s_uf 
-                         from tp_ov
-                        where u_oi = (select u_orgvenda 
-                                        from ftsl_orgv
-                                       where u_pkey = (select cast(valor as integer)
-                                                         from temp_ativos
-                                                        where s_nome = ''pk_org_venda''
-                                                      )
-                                     )  
-                       )
-   and t1.s_uf_dest = (select s_uf 
-                         from ftsl_ende
-                        where s_codcliente = (select s_codigo 
-                                                from ftsl_clie
-                                               where u_pkey = (select cast(valor as integer)
-                                                                 from temp_ativos
-                                                                where s_nome = ''pk_cliente''
-                                                              )
-                                             )
-                      )
-   and t1.s_contrib_type_code = ''''
-)
-, cte_valor_icms as (
-select s_categoria_imposto
-     , case when ( t2.d_preco_venda 
-                 * d_aliq_ipi 
-                 ) 
-                 > ( select d_valor_imposto 
-                       from cte_valor_ipi
-                   )
-            then ( t2.d_preco_venda 
-                 * ( 1 
-                   + d_aliq_ipi
-                   )
-                 ) 
-                 * d_aliquota
-            else ( t2.d_preco_venda 
-                 + ( select d_valor_imposto 
-                       from cte_valor_ipi
-                   ) 
-                 )
-                 * d_aliquota
-        end as d_valor_imposto
-     , t1.s_oper as s_oper
-  from cte_icms_item_contribuinte t1
- cross join (select cast(valor as real) as d_preco_venda
-               from temp_ativos
-              where s_nome = ''preco_venda''
-            ) t2
- union
-select t1.s_categoria_imposto
-     , (t2.d_preco_venda * (1+t1.d_aliq_ipi)) * t1.d_aliquota as d_valor_imposto
-     , t1.s_oper as s_oper
-  from cte_icms_item_sem_contribuinte t1
- cross join (select cast(valor as real) as d_preco_venda
-               from temp_ativos
-              where s_nome = ''preco_venda''
-            ) t2
- where ( select s_categoria_imposto 
-           from cte_icms_item_contribuinte
-       ) is null
-)
-, cte_icms_st_item_contribuinte as (
-select t2.s_categoria_imposto          as s_categoria_imposto
-     , t1.s_uom_icms_st                as s_uom_code
-     , t1.d_valor_icms                 as d_fator
-     , t1.d_aliq_icms/100              as d_aliquota
-     , coalesce(t1.d_basis_icms,0)/100 as d_mod_base_icms
-     , t1.s_type                       as s_type
-     , t1.d_perc_alt_pauta             as d_perc_alt_pauta
-     , coalesce(t1.d_aliq_ipi,0)/100   as d_aliq_ipi
-     , t2.s_oper                       as s_oper
-  from tp_imposto_pauta t1
-  join cte_impostos t2 on (t2.s_tax_type like ''ICMS_ST%'' 
-                           and t2.s_usa_pauta = ''Y''
-                          )
- where t1.s_tipo_reg = ''ITEM''
-   and t1.s_pk_reg = (select s_codproduto
-                        from ftsl_prod
-                       where u_pkey = (select cast(valor as integer)
-                                         from temp_ativos
-                                        where s_nome = ''pk_produto''
-                                      )
-                     )
-   and t1.u_orgvenda = (select u_orgvenda
-                          from ftsl_orgv
-                         where u_pkey = (select cast(valor as integer)
-                                           from temp_ativos
-                                          where s_nome = ''pk_org_venda''
-                                        )
-                       )
-   and t1.s_type is not null
-   and t1.s_uf_orig = (select s_uf 
-                         from tp_ov
-                        where u_oi = (select u_orgvenda 
-                                        from ftsl_orgv
-                                       where u_pkey = (select cast(valor as integer)
-                                                         from temp_ativos
-                                                        where s_nome = ''pk_org_venda''
-                                                      )
-                                     )  
-                      )
-   and t1.s_uf_dest = (select s_uf 
-                         from ftsl_ende
-                        where s_codcliente = (select s_codigo 
-                                                from ftsl_clie
-                                               where u_pkey = (select cast(valor as integer)
-                                                                 from temp_ativos
-                                                                where s_nome = ''pk_cliente''
-                                                              )
-                                             )
-                      )
-   and t1.s_contrib_type_code = (select s_codigo 
-                                   from ftsl_cate 
-                                  where u_pkey = (select u_categoria
-                                                    from ftsl_clie
-                                                   where u_pkey = (select cast(valor as integer)
-                                                                     from temp_ativos
-                                                                    where s_nome = ''pk_cliente''
-                                                                  )
-                                                 )
-                                )
-)
-, cte_icms_st_item_sem_contribuinte as (
-select t2.s_categoria_imposto          as s_categoria_imposto
-     , t1.s_uom_icms_st                as s_uom_code
-     , t1.d_valor_icms                 as d_fator
-     , t1.d_aliq_icms/100              as d_aliquota
-     , coalesce(t1.d_basis_icms,0)/100 as d_mod_base_icms
-     , t1.s_type                       as s_type
-     , t1.d_perc_alt_pauta             as d_perc_alt_pauta
-     , coalesce(t1.d_aliq_ipi,0)/100   as d_aliq_ipi
-     , t2.s_oper                       as s_oper
-  from tp_imposto_pauta t1
-  join cte_impostos t2 on (t2.s_tax_type like ''ICMS_ST%'' 
-                           and t2.s_usa_pauta = ''Y''
-                          )
- where s_tipo_reg = ''ITEM''
-   and s_pk_reg = (select s_codproduto
-                     from ftsl_prod
-                    where u_pkey = (select cast(valor as integer)
-                                      from temp_ativos
-                                     where s_nome = ''pk_produto''
-                                   )
-                  )
-   and u_orgvenda = (select u_orgvenda
-                       from ftsl_orgv
-                      where u_pkey = (select cast(valor as integer)
-                                        from temp_ativos
-                                       where s_nome = ''pk_org_venda''
-                                     )
-                    )
-   and s_type is not null
-   and s_uf_orig = (select s_uf 
-                      from tp_ov
-                     where u_oi = (select u_orgvenda 
-                                     from ftsl_orgv
-                                    where u_pkey = (select cast(valor as integer)
-                                                      from temp_ativos
-                                                     where s_nome = ''pk_org_venda''
-                                                   )
-                                  )  
-                    )
-   and s_uf_dest = (select s_uf 
-                      from ftsl_ende
-                     where s_codcliente = (select s_codigo 
-                                             from ftsl_clie
-                                            where u_pkey = (select cast(valor as integer)
-                                                              from temp_ativos
-                                                             where s_nome = ''pk_cliente''
-                                                           )
-                                          )
-                   )
-   and s_contrib_type_code = ''''
-)
-, cte_valor_icms_st as (
-/*
-CALCULO ICMS ST NORMAL
-( ( preço do produto * mva ) * aliquota ST )- (valor ICMS) 
-PAUTA
-pauta * aliquota - (valor ICMS)
-*/
-select t1.s_categoria_imposto
-     , case when t1.s_type = ''SUBSTITUIDO''
-            then t1.d_fator
-            when ( (select s_uf 
-                      from ftsl_ende
-                     where s_codcliente = (select s_codigo 
-                                             from ftsl_clie
-                                            where u_pkey = (select cast(valor as integer)
-                                                              from temp_ativos
-                                                             where s_nome = ''pk_cliente''
-                                                           )
-                                          )
-                   ) in (''CE'',''PI'',''SE'',''PE'')
-                 and (select s_uf 
-                      from ftsl_ende
-                     where s_codcliente = (select s_codigo 
-                                             from ftsl_clie
-                                            where u_pkey = (select cast(valor as integer)
-                                                              from temp_ativos
-                                                             where s_nome = ''pk_cliente''
-                                                           )
-                                          ) )= ( select s_uf 
-                                                  from tp_ov
-                                                 where u_oi = (select u_orgvenda 
-                                                                 from ftsl_orgv
-                                                                where u_pkey = (select cast(valor as integer)
-                                                                                  from temp_ativos
-                                                                                 where s_nome = ''pk_org_venda''
-                                                                               )
-                                                              ) )
-                 and d_fator < (select cast(valor as real)
-                                  from temp_ativos
-                                 where s_nome = ''preco_venda''
-                               ) 
-                 )
-            then 0
-            else ( case when (select cast(valor as real) 
-                                from temp_ativos 
-                               where s_nome = ''preco_venda''
-                             ) > t1.d_fator 
-                        then (select d_valor_imposto                        
-                                from temp_impostos                                
-                               where u_codproduto = (select cast(valor as integer)
-                                                       from temp_ativos
-                                                      where s_nome = ''pk_produto''
-                                                    )
-                                 and s_categoria_imposto = ''ICMS_ST_C''
-                             )
-                        else ( t1.d_fator  
-                             * t1.d_aliquota 
-                             )
-                    end 
-                 - t2.d_valor_imposto
-                 ) 
-        end as d_valor_imposto
-     , t1.s_oper as s_oper
-  from cte_icms_st_item_contribuinte t1
-  left join (select coalesce(t2.d_valor_imposto,t1.d_valor_imposto) as d_valor_imposto
-               from temp_impostos t1
-               left join (select d_valor_imposto
-                            from cte_valor_icms
-                         ) t2
-              where t1.u_codproduto = (select cast(valor as integer)
-                                         from temp_ativos
-                                        where s_nome = ''pk_produto''
-                                      )
-                and t1.s_categoria_imposto = ''ICMS_C''
-            ) t2
- union
-select t1.s_categoria_imposto
-     , case when t1.s_type = ''SUBSTITUIDO''
-            then t1.d_fator
-            when ( (select s_uf 
-                      from ftsl_ende
-                     where s_codcliente = (select s_codigo 
-                                             from ftsl_clie
-                                            where u_pkey = (select cast(valor as integer)
-                                                              from temp_ativos
-                                                             where s_nome = ''pk_cliente''
-                                                           )
-                                          )
-                   ) in (''CE'',''PI'',''SE'',''PE'')
-                 and (select s_uf 
-                      from ftsl_ende
-                     where s_codcliente = (select s_codigo 
-                                             from ftsl_clie
-                                            where u_pkey = (select cast(valor as integer)
-                                                              from temp_ativos
-                                                             where s_nome = ''pk_cliente''
-                                                           )
-                                          ) )= ( select s_uf 
-                                                  from tp_ov
-                                                 where u_oi = (select u_orgvenda 
-                                                                 from ftsl_orgv
-                                                                where u_pkey = (select cast(valor as integer)
-                                                                                  from temp_ativos
-                                                                                 where s_nome = ''pk_org_venda''
-                                                                               )
-                                                              ) )
-                 and d_fator < (select cast(valor as real)
-                                  from temp_ativos
-                                 where s_nome = ''preco_venda''
-                               ) 
-                 )
-            then 0
-            else ( case when (select cast(valor as real) 
-                                from temp_ativos 
-                               where s_nome = ''preco_venda''
-                             ) > t1.d_fator 
-                        then (select d_valor_imposto                        
-                                from temp_impostos                                
-                               where u_codproduto = (select cast(valor as integer)
-                                                       from temp_ativos
-                                                      where s_nome = ''pk_produto''
-                                                    )
-                                 and s_categoria_imposto = ''ICMS_ST_C''
-                             )
-                        else ( t1.d_fator  
-                             * t1.d_aliquota 
-                             )
-                    end 
-                 - t2.d_valor_imposto
-                 ) 
-        end as d_valor_imposto
-     , t1.s_oper as s_oper
-  from cte_icms_st_item_sem_contribuinte t1
-  left join (select coalesce(t2.d_valor_imposto,t1.d_valor_imposto) as d_valor_imposto
-               from temp_impostos t1
-               left join (select d_valor_imposto
-                            from cte_valor_icms
-                         ) t2
-              where t1.u_codproduto = (select cast(valor as integer)
-                                         from temp_ativos
-                                        where s_nome = ''pk_produto''   
-                                      )
-                and t1.s_categoria_imposto = ''ICMS_C''
-            ) t2
- where ( select s_categoria_imposto 
-           from cte_icms_st_item_contribuinte
-       ) is null
-)
-, cte_imposto_pauta as (
-select s_categoria_imposto
-     , d_valor_imposto
-     , s_oper
-  from cte_valor_ipi
- union all
-select s_categoria_imposto
-     , d_valor_imposto
-     , s_oper
-  from cte_valor_icms
- union all
-select s_categoria_imposto
-     , d_valor_imposto
-     , s_oper
-  from cte_valor_icms_st
-)
-insert into temp_impostos_pauta
-select distinct ( select cast(valor as integer)
-           from temp_ativos
-          where s_nome = ''pk_produto''
-       ) as u_codproduto
-     , s_categoria_imposto
-     , case when s_oper = ''D'' 
-            then 0
-            else d_valor_imposto
-        end as d_valor_imposto
-  from cte_imposto_pauta;
-');
-
-delete FROM t_vars WHERE grp = 'QSQL' AND id = emp2long('INFO') and ord = 14 ;
-INSERT INTO t_vars VALUES (0, 'QSQL', emp2long('INFO'), 14, 30, 3, 0, 'delete from temp_impostos_final
-                                                                        where u_codproduto = (select cast(valor as integer) 
-                                                                                                from temp_ativos 
-                                                                                               where s_nome = ''pk_produto''
-                                                                                             );');
-
-delete FROM t_vars WHERE grp = 'QSQL' AND id = emp2long('INFO') and ord = 15;
-INSERT INTO t_vars VALUES (0, 'QSQL', emp2long('INFO'), 15, 30, 3, 0,'
-insert into temp_impostos_final
-select u_codproduto 
-     , s_categoria_imposto
-     , d_valor_imposto
-  from temp_impostos_pauta
- where u_codproduto = (select cast(valor as integer)
-                         from temp_ativos
-                        where s_nome = ''pk_produto''
-                      )
-   and s_categoria_imposto not like ''%IPI%''
- union 
-select t1.u_codproduto 
-     , t1.s_categoria_imposto
-     , t1.d_valor_imposto
-  from temp_impostos t1
-  left join temp_impostos_pauta t2 on (t1.s_categoria_imposto = t2.s_categoria_imposto
-                                       and t1.u_codproduto = t2.u_codproduto
-                                      )
- where t1.u_codproduto = (select cast(valor as integer)
-                         from temp_ativos
-                        where s_nome = ''pk_produto''
-                      )
-   and t2.s_categoria_imposto is null
-   and t1.s_categoria_imposto not like ''%IPI%''
- union
-  select t1.u_codproduto 
-     , t1.s_categoria_imposto
-     , case when t1.d_valor_imposto >= t2.d_valor_imposto
-            then t1.d_valor_imposto
-            else t2.d_valor_imposto
-        end as d_valor_imposto
-  from temp_impostos t1
-  join temp_impostos_pauta t2 on (t1.s_categoria_imposto = t2.s_categoria_imposto
-                                  and t1.u_codproduto = t2.u_codproduto
-                                 )
- where t1.u_codproduto = (select cast(valor as integer)
-                         from temp_ativos
-                        where s_nome = ''pk_produto''
-                      )
-   and t1.s_categoria_imposto like ''%IPI%''
-   ');
-
+begin;
 delete FROM t_vars WHERE grp = 'QSQL' AND id = emp2long('INFO') and ord = 11 ;
 INSERT INTO t_vars VALUES (0, 'QSQL', emp2long('INFO'), 11, 30, 3, 0, 'with cte_impostos as (
 select distinct t1.S_CATEGORIA_IMPOSTO 
@@ -631,6 +27,17 @@ select distinct t1.S_CATEGORIA_IMPOSTO
                                                                                               and t2.s_codproduto = ''1000000125''
                                                                                               and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
                                                                                              then 7
+                                                                                             WHEN (select s_codigo 
+                                                                                                     from ftsl_cate 
+                                                                                                    where u_pkey = (select u_categoria
+                                                                                                                      from ftsl_clie
+                                                                                                                     where u_pkey = (select cast(valor as integer)
+                                                                                                                                       from temp_ativos
+                                                                                                                                      where s_nome = ''pk_cliente''
+                                                                                                                                    )
+                                                                                                                   )
+                                                                                                  ) = ''CONTRIB_REG_ESPEC''
+                                                                                             THEN 8
                                                                                              else t2.u_status
                                                                                          end
                                                                                       ) 
@@ -735,6 +142,17 @@ select distinct t1.S_CATEGORIA_IMPOSTO
                                                                                               and t2.s_codproduto = ''1000000125''
                                                                                               and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
                                                                                              then 7
+                                                                                             WHEN (select s_codigo 
+                                                                                                     from ftsl_cate 
+                                                                                                    where u_pkey = (select u_categoria
+                                                                                                                      from ftsl_clie
+                                                                                                                     where u_pkey = (select cast(valor as integer)
+                                                                                                                                       from temp_ativos
+                                                                                                                                      where s_nome = ''pk_cliente''
+                                                                                                                                    )
+                                                                                                                   )
+                                                                                                  ) = ''CONTRIB_REG_ESPEC''
+                                                                                             THEN 8
                                                                                              else t2.u_status
                                                                                          end
                                                                                       ) 
@@ -832,6 +250,17 @@ select distinct t1.S_CATEGORIA_IMPOSTO
                                                                                               and t2.s_codproduto = ''1000000125''
                                                                                               and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
                                                                                              then 7
+                                                                                             WHEN (select s_codigo 
+                                                                                                     from ftsl_cate 
+                                                                                                    where u_pkey = (select u_categoria
+                                                                                                                      from ftsl_clie
+                                                                                                                     where u_pkey = (select cast(valor as integer)
+                                                                                                                                       from temp_ativos
+                                                                                                                                      where s_nome = ''pk_cliente''
+                                                                                                                                    )
+                                                                                                                   )
+                                                                                                  ) = ''CONTRIB_REG_ESPEC''
+                                                                                             THEN 8
                                                                                              else t2.u_status
                                                                                          end
                                                                                       ) 
@@ -916,6 +345,17 @@ select distinct t1.S_CATEGORIA_IMPOSTO
                                                                                               and t2.s_codproduto = ''1000000125''
                                                                                               and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
                                                                                              then 7
+                                                                                             WHEN (select s_codigo 
+                                                                                                     from ftsl_cate 
+                                                                                                    where u_pkey = (select u_categoria
+                                                                                                                      from ftsl_clie
+                                                                                                                     where u_pkey = (select cast(valor as integer)
+                                                                                                                                       from temp_ativos
+                                                                                                                                      where s_nome = ''pk_cliente''
+                                                                                                                                    )
+                                                                                                                   )
+                                                                                                  ) = ''CONTRIB_REG_ESPEC''
+                                                                                             THEN 8
                                                                                              else t2.u_status
                                                                                          end
                                                                                       ) 
@@ -1024,6 +464,17 @@ select distinct t1.S_CATEGORIA_IMPOSTO
                                                                                               and t2.s_codproduto = ''1000000125''
                                                                                               and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
                                                                                              then 7
+                                                                                             WHEN (select s_codigo 
+                                                                                                     from ftsl_cate 
+                                                                                                    where u_pkey = (select u_categoria
+                                                                                                                      from ftsl_clie
+                                                                                                                     where u_pkey = (select cast(valor as integer)
+                                                                                                                                       from temp_ativos
+                                                                                                                                      where s_nome = ''pk_cliente''
+                                                                                                                                    )
+                                                                                                                   )
+                                                                                                  ) = ''CONTRIB_REG_ESPEC''
+                                                                                             THEN 8
                                                                                              else t2.u_status
                                                                                          end
                                                                                       ) 
@@ -1165,6 +616,17 @@ select S_CATEGORIA_IMPOSTO
                                                                                               and t2.s_codproduto = ''1000000125''
                                                                                               and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
                                                                                              then 7
+                                                                                             WHEN (select s_codigo 
+                                                                                                     from ftsl_cate 
+                                                                                                    where u_pkey = (select u_categoria
+                                                                                                                      from ftsl_clie
+                                                                                                                     where u_pkey = (select cast(valor as integer)
+                                                                                                                                       from temp_ativos
+                                                                                                                                      where s_nome = ''pk_cliente''
+                                                                                                                                    )
+                                                                                                                   )
+                                                                                                  ) = ''CONTRIB_REG_ESPEC''
+                                                                                             THEN 8
                                                                                              else t2.u_status
                                                                                          end
                                                                                       ) 
@@ -1238,3 +700,4 @@ select (select cast(valor as integer)
      , s_codigo_imposto  
      , d_valor_imposto as d_valor_imposto
   from cte_imp_prior;');  
+commit;
