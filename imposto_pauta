@@ -395,6 +395,23 @@ select t1.s_categoria_imposto
                                                            )
                                           )
                    ) in (''CE'',''PI'',''SE'',''PE'')
+                 and (select s_uf 
+                      from ftsl_ende
+                     where s_codcliente = (select s_codigo 
+                                             from ftsl_clie
+                                            where u_pkey = (select cast(valor as integer)
+                                                              from temp_ativos
+                                                             where s_nome = ''pk_cliente''
+                                                           )
+                                          ) )= ( select s_uf 
+                                                  from tp_ov
+                                                 where u_oi = (select u_orgvenda 
+                                                                 from ftsl_orgv
+                                                                where u_pkey = (select cast(valor as integer)
+                                                                                  from temp_ativos
+                                                                                 where s_nome = ''pk_org_venda''
+                                                                               )
+                                                              ) )
                  and d_fator < (select cast(valor as real)
                                   from temp_ativos
                                  where s_nome = ''preco_venda''
@@ -447,6 +464,23 @@ select t1.s_categoria_imposto
                                                            )
                                           )
                    ) in (''CE'',''PI'',''SE'',''PE'')
+                 and (select s_uf 
+                      from ftsl_ende
+                     where s_codcliente = (select s_codigo 
+                                             from ftsl_clie
+                                            where u_pkey = (select cast(valor as integer)
+                                                              from temp_ativos
+                                                             where s_nome = ''pk_cliente''
+                                                           )
+                                          ) )= ( select s_uf 
+                                                  from tp_ov
+                                                 where u_oi = (select u_orgvenda 
+                                                                 from ftsl_orgv
+                                                                where u_pkey = (select cast(valor as integer)
+                                                                                  from temp_ativos
+                                                                                 where s_nome = ''pk_org_venda''
+                                                                               )
+                                                              ) )
                  and d_fator < (select cast(valor as real)
                                   from temp_ativos
                                  where s_nome = ''preco_venda''
@@ -589,9 +623,31 @@ select distinct t1.S_CATEGORIA_IMPOSTO
   join tp_imposto_orig_dest_produto t2 on (t1.S_CATEGORIA_IMPOSTO = t2.S_CATEGORIA_IMPOSTO and t1.u_orgvenda = t2.u_orgvenda)
  where t1.S_ID_TIPO_TRANSACAO_OM = (select t1.u_codtranscab 
                                       from tp_transacoes t1
-                                      join ftsl_sbtr t2 on (t1.u_ou=t2.u_status)
+                                      join tp_orgven_tabela_produto_st t2 on (t1.u_ou=( case when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') < 3
+                                                                                             then 6
+                                                                                             when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
+                                                                                             then 7
+                                                                                             else t2.u_status
+                                                                                         end
+                                                                                      ) 
+                                                                              and t1.u_oi = t2.u_orgvenda 
+                                                                              and t2.s_uf = ( select s_uf 
+                                                                                                from ftsl_ende
+                                                                                               where s_codcliente = (select s_codigo 
+                                                                                                                       from ftsl_clie
+                                                                                                                      where u_pkey = (select cast(valor as integer)
+                                                                                                                                        from temp_ativos
+                                                                                                                                       where s_nome = ''pk_cliente''
+                                                                                                                                     )
+                                                                                                                    )
+                                                                                            )
+                                                                             )
                                       join ftsl_tven t3 on (t3.s_tipovenda = t1.s_descricao)
-                                     where t2.u_codproduto = (select cast(valor as integer)
+                                     where t2.u_codproduto_pk = (select cast(valor as integer)
                                                                 from temp_ativos
                                                                where s_nome = ''pk_produto''
                                                              )
@@ -671,9 +727,31 @@ select distinct t1.S_CATEGORIA_IMPOSTO
   join tp_imposto_origem_destino t2 on (t1.S_CATEGORIA_IMPOSTO = t2.S_CATEGORIA_IMPOSTO and t1.u_orgvenda = t2.u_orgvenda)
  where t1.S_ID_TIPO_TRANSACAO_OM = (select t1.u_codtranscab 
                                       from tp_transacoes t1
-                                      join ftsl_sbtr t2 on (t1.u_ou=t2.u_status)
+                                      join tp_orgven_tabela_produto_st t2 on (t1.u_ou=( case when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') < 3
+                                                                                             then 6
+                                                                                             when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
+                                                                                             then 7
+                                                                                             else t2.u_status
+                                                                                         end
+                                                                                      ) 
+                                                                              and t1.u_oi = t2.u_orgvenda 
+                                                                              and t2.s_uf = ( select s_uf 
+                                                                                                from ftsl_ende
+                                                                                               where s_codcliente = (select s_codigo 
+                                                                                                                       from ftsl_clie
+                                                                                                                      where u_pkey = (select cast(valor as integer)
+                                                                                                                                        from temp_ativos
+                                                                                                                                       where s_nome = ''pk_cliente''
+                                                                                                                                     )
+                                                                                                                    )
+                                                                                            )
+                                                                             )
                                       join ftsl_tven t3 on (t3.s_tipovenda = t1.s_descricao)
-                                     where t2.u_codproduto = (select cast(valor as integer)
+                                     where t2.u_codproduto_pk = (select cast(valor as integer)
                                                                 from temp_ativos
                                                                where s_nome = ''pk_produto''
                                                              )
@@ -746,9 +824,31 @@ select distinct t1.S_CATEGORIA_IMPOSTO
   join tp_imposto_class_fiscal t2 on (t1.S_CATEGORIA_IMPOSTO = t2.S_CATEGORIA_IMPOSTO and t1.u_orgvenda = t2.u_orgvenda)
  where t1.S_ID_TIPO_TRANSACAO_OM = (select t1.u_codtranscab 
                                       from tp_transacoes t1
-                                      join ftsl_sbtr t2 on (t1.u_ou=t2.u_status)
+                                      join tp_orgven_tabela_produto_st t2 on (t1.u_ou=( case when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') < 3
+                                                                                             then 6
+                                                                                             when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
+                                                                                             then 7
+                                                                                             else t2.u_status
+                                                                                         end
+                                                                                      ) 
+                                                                              and t1.u_oi = t2.u_orgvenda 
+                                                                              and t2.s_uf = ( select s_uf 
+                                                                                                from ftsl_ende
+                                                                                               where s_codcliente = (select s_codigo 
+                                                                                                                       from ftsl_clie
+                                                                                                                      where u_pkey = (select cast(valor as integer)
+                                                                                                                                        from temp_ativos
+                                                                                                                                       where s_nome = ''pk_cliente''
+                                                                                                                                     )
+                                                                                                                    )
+                                                                                            )
+                                                                             )
                                       join ftsl_tven t3 on (t3.s_tipovenda = t1.s_descricao)
-                                     where t2.u_codproduto = (select cast(valor as integer)
+                                     where t2.u_codproduto_pk = (select cast(valor as integer)
                                                                 from temp_ativos
                                                                where s_nome = ''pk_produto''
                                                              )
@@ -808,9 +908,31 @@ select distinct t1.S_CATEGORIA_IMPOSTO
   join tp_imposto_exc_class_fiscal t2 on (t1.S_CATEGORIA_IMPOSTO = t2.S_CATEGORIA_IMPOSTO and t1.u_orgvenda = t2.u_orgvenda)
  where t1.S_ID_TIPO_TRANSACAO_OM = (select t1.u_codtranscab 
                                       from tp_transacoes t1
-                                      join ftsl_sbtr t2 on (t1.u_ou=t2.u_status)
+                                      join tp_orgven_tabela_produto_st t2 on (t1.u_ou=( case when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') < 3
+                                                                                             then 6
+                                                                                             when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
+                                                                                             then 7
+                                                                                             else t2.u_status
+                                                                                         end
+                                                                                      ) 
+                                                                              and t1.u_oi = t2.u_orgvenda 
+                                                                              and t2.s_uf = ( select s_uf 
+                                                                                                from ftsl_ende
+                                                                                               where s_codcliente = (select s_codigo 
+                                                                                                                       from ftsl_clie
+                                                                                                                      where u_pkey = (select cast(valor as integer)
+                                                                                                                                        from temp_ativos
+                                                                                                                                       where s_nome = ''pk_cliente''
+                                                                                                                                     )
+                                                                                                                    )
+                                                                                            )
+                                                                             )
                                       join ftsl_tven t3 on (t3.s_tipovenda = t1.s_descricao)
-                                     where t2.u_codproduto = (select cast(valor as integer)
+                                     where t2.u_codproduto_pk = (select cast(valor as integer)
                                                                 from temp_ativos
                                                                where s_nome = ''pk_produto''
                                                              )
@@ -894,9 +1016,31 @@ select distinct t1.S_CATEGORIA_IMPOSTO
   join tp_imposto_exc_cliente t2 on (t1.S_CATEGORIA_IMPOSTO = t2.S_CATEGORIA_IMPOSTO and t1.u_orgvenda = t2.u_orgvenda)
  where t1.S_ID_TIPO_TRANSACAO_OM = (select t1.u_codtranscab 
                                       from tp_transacoes t1
-                                      join ftsl_sbtr t2 on (t1.u_ou=t2.u_status)
+                                      join tp_orgven_tabela_produto_st t2 on (t1.u_ou=( case when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') < 3
+                                                                                             then 6
+                                                                                             when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
+                                                                                             then 7
+                                                                                             else t2.u_status
+                                                                                         end
+                                                                                      ) 
+                                                                              and t1.u_oi = t2.u_orgvenda 
+                                                                              and t2.s_uf = ( select s_uf 
+                                                                                                from ftsl_ende
+                                                                                               where s_codcliente = (select s_codigo 
+                                                                                                                       from ftsl_clie
+                                                                                                                      where u_pkey = (select cast(valor as integer)
+                                                                                                                                        from temp_ativos
+                                                                                                                                       where s_nome = ''pk_cliente''
+                                                                                                                                     )
+                                                                                                                    )
+                                                                                            )
+                                                                             )
                                       join ftsl_tven t3 on (t3.s_tipovenda = t1.s_descricao)
-                                     where t2.u_codproduto = (select cast(valor as integer)
+                                     where t2.u_codproduto_pk = (select cast(valor as integer)
                                                                 from temp_ativos
                                                                where s_nome = ''pk_produto''
                                                              )
@@ -929,7 +1073,13 @@ and t1.u_orgvenda = (select u_orgvenda
                                                                   )
                                                  )
                                 )
-   and t2.s_id_endereco = (''''/*Definir onde se encontra esta informação do cliente*/)
+   and t2.s_id_endereco = (select s_codigo
+                             from ftsl_clie
+                            where u_pkey = (select cast(valor as integer)
+                                              from temp_ativos
+                                             where s_nome = ''pk_cliente''
+                                           )
+                          )
    and t1.s_codregra = ''GET_EXC_FISC_CLAS_TX_CODE'' 
  UNION all
 select S_CATEGORIA_IMPOSTO 
@@ -1007,9 +1157,31 @@ select S_CATEGORIA_IMPOSTO
                   join tp_GRUPO_IMPOSTO t2 on (t1.S_CATEGORIA_IMPOSTO = t2.S_CATEGORIA_IMPOSTO and t1.u_orgvenda = t2.u_orgvenda)
                  where t1.S_ID_TIPO_TRANSACAO_OM = (select t1.u_codtranscab 
                                       from tp_transacoes t1
-                                      join ftsl_sbtr t2 on (t1.u_ou=t2.u_status)
+                                      join tp_orgven_tabela_produto_st t2 on (t1.u_ou=( case when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') < 3
+                                                                                             then 6
+                                                                                             when t1.u_oi = 801
+                                                                                              and t2.s_codproduto = ''1000000125''
+                                                                                              and (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'') >= 3
+                                                                                             then 7
+                                                                                             else t2.u_status
+                                                                                         end
+                                                                                      ) 
+                                                                              and t1.u_oi = t2.u_orgvenda 
+                                                                              and t2.s_uf = ( select s_uf 
+                                                                                                from ftsl_ende
+                                                                                               where s_codcliente = (select s_codigo 
+                                                                                                                       from ftsl_clie
+                                                                                                                      where u_pkey = (select cast(valor as integer)
+                                                                                                                                        from temp_ativos
+                                                                                                                                       where s_nome = ''pk_cliente''
+                                                                                                                                     )
+                                                                                                                    )
+                                                                                            )
+                                                                             )
                                       join ftsl_tven t3 on (t3.s_tipovenda = t1.s_descricao)
-                                     where t2.u_codproduto = (select cast(valor as integer)
+                                     where t2.u_codproduto_pk = (select cast(valor as integer)
                                                                 from temp_ativos
                                                                where s_nome = ''pk_produto''
                                                              )
