@@ -1,10 +1,9 @@
-begin;
 delete FROM t_vars WHERE grp = 'QSQL' AND id = emp2long('INFO') and ord = 11 ;
 INSERT INTO t_vars VALUES (0, 'QSQL', emp2long('INFO'), 11, 30, 3, 0, 'with cte_impostos as (
 select distinct t1.S_CATEGORIA_IMPOSTO 
      , t2.s_codigo_imposto
      , t1.D_INDICE_PRIORIDADE
-     , ( ( (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda'')  
+     , ( ( (select cast(valor as real) from temp_ativos where s_nome = ''preco_venda''/*alteração de testes*/)  
          * ( ( 100
              + coalesce(t2.D_ALIQUOTA_MODIFICACAO_BASE,0)
              )
